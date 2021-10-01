@@ -1,0 +1,55 @@
+{
+"watchers": [
+{
+	"path": "C:\\",
+	"recursive": true,
+	"types": ["*"],
+	"ignore_types": null,
+	"ignore_dirs": false,
+	"case_sensitive": false,
+	"handlers": [
+	{
+		"active": false,
+		"events": ["cre", "del", "mod", "mov"],
+		"type": "email",
+		"from": "",
+		"to": [],
+		"subject": "WATCHER NOTIFICATION - {path}",
+		"smtp": 
+		{
+			"server": "",
+			"login": "",
+			"password": "",
+			"protocol": "SSL",
+			"port": 465
+		}
+	},
+	{
+		"active": true,
+		"events": ["cre", "del", "mod", "mov"],
+		"type": "popup",
+		"subject": "WATCHER NOTIFICATION - {path}",
+		"timeout": 10,
+		"icon": "auto",
+		"ticker": "WATCHER NOTIFICATION - {path}"
+	}
+	]
+}
+],
+"poll_interval": 10,
+"logging": 
+{
+	"log": true,
+	"file": null,
+	"verbose": false
+},
+"proxy": 
+{
+	"useproxy": true,
+	"server": null,
+	"port": null,
+	"type": "HTTP",
+	"username": null,
+	"password": null
+}
+}
