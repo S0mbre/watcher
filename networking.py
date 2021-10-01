@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import smtplib
 import socks
-import re
+import re, os
 from urllib.request import getproxies
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 from globals import CONFIG
 import utils
@@ -100,23 +102,34 @@ class SMTP_SSL_Proxy(smtplib.SMTP_SSL):
 
 # ============================================================= #
 
-def send_email(body, subject, sender, receivers, smtp):
+def send_email(body, subject, sender, receivers, smtp, sender_name='Watcher', attachments=None):
     is_ssl = smtp['protocol'].upper() == 'SSL'
     smtp_class = SMTP_SSL_Proxy if is_ssl else SMTP_Proxy
     try:
-        msg = EmailMessage()
+        msg = MIMEMultipart()
         msg['Subject'] = subject
-        msg['To'] = '; '.join(receivers)
-        msg['From'] = sender
-        msg.set_content(body)
+        msg['Bcc'] = ', '.join(receivers)
+        msg['From'] = f'{sender_name} <{sender}>' if sender_name else sender
+        msg.attach(MIMEText(body))
+
+        if attachments:
+            for filepath in attachments:
+                bname = os.path.basename(filepath)
+                try:
+                    with open(filepath, 'rb') as file_:
+                        part = MIMEApplication(file_.read(), Name=bname)
+                    part['Content-Disposition'] = f'attachment; filename="{bname}"'
+                    msg.attach(part)
+                except:
+                    continue
 
         with smtp_class(smtp['server'], smtp['port'], proxifier=Proxifier.get_proxifier()) as emailer:
             emailer.login(smtp['login'], smtp['password'])
             if not is_ssl: 
                 emailer.starttls()
-            emailer.send_message(msg, sender, receivers)
+            emailer.sendmail(sender, receivers, msg.as_string())
 
-        utils.log(f"--- Email sent to {msg['To']}")
+        utils.log(f"--- Email sent to: {receivers}", how='debug')
 
     except smtplib.SMTPException as smtp_err:
         utils.log(f'SMTP ERROR: {str(smtp_err)}', how='exception')

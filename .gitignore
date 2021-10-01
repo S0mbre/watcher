@@ -3,3 +3,7 @@
 *.pyc
 *.json
 !config.json
+*.txt
+!requirements.txt
+*.log
+*.zip

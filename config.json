@@ -13,7 +13,7 @@
 		"events": ["cre", "del", "mod", "mov"],
 		"type": "email",
 		"from": "",
-		"to": [],
+		"to": null,
 		"subject": "WATCHER NOTIFICATION - {path}",
 		"smtp": 
 		{
@@ -29,19 +29,36 @@
 		"events": ["cre", "del", "mod", "mov"],
 		"type": "popup",
 		"subject": "WATCHER NOTIFICATION - {path}",
-		"timeout": 10,
+		"timeout": 5,
 		"icon": "auto",
 		"ticker": "WATCHER NOTIFICATION - {path}"
 	}
 	]
 }
 ],
-"poll_interval": 10,
+"poll_interval": 5,
 "logging": 
 {
 	"log": true,
 	"file": null,
-	"verbose": false
+	"verbose": false,
+	"send":
+	{
+		"active": false,
+		"interval": 20,
+		"from": "",
+		"to": null,
+		"subject": "WATCHER LOG [{dt}]",
+		"smtp": 
+		{
+			"server": "",
+			"login": "",
+			"password": "",
+			"protocol": "SSL",
+			"port": 465
+		},
+		"zipped": true
+	}
 },
 "proxy": 
 {

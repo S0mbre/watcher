@@ -1,0 +1,2 @@
+PySocks>=1.7
+watchdog>=2.1
