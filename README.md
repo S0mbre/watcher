@@ -7,7 +7,7 @@
 ### Clone repo and install required packages
 ```bash
 git clone https://github.com/S0mbre/watcher.git
-python -m pip install -r requirementstxt
+python -m pip install -r requirements.txt
 ```
 
 ### Configure watched directories and events in `config.json`
@@ -91,4 +91,4 @@ python -m pip install -r requirementstxt
 ```bash
 python watcher.py [path-to-condig.json]
 ```
-If ommitted, `path-to-condig.json` will be resolved as `<project>/config.json`. Otherwise, a valid path to a JSON config file (as shown above) must be supplied.
+If omitted, `path-to-condig.json` will be resolved as `<project>/config.json`. Otherwise, a valid path to a JSON config file (as shown above) must be supplied.
