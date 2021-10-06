@@ -12,8 +12,12 @@
 		"active": false,
 		"events": ["cre", "del", "mod", "mov"],
 		"type": "email",
+		"emit": {
+			"interval": 1,
+			"unit": "m"
+		},
 		"from": "",
-		"to": null,
+		"to": [],
 		"subject": "WATCHER NOTIFICATION - {path}",
 		"smtp": 
 		{
@@ -22,12 +26,18 @@
 			"password": "",
 			"protocol": "SSL",
 			"port": 465
-		}
+		},
+		"attachment": false,
+		"zipped": false
 	},
 	{
 		"active": true,
 		"events": ["cre", "del", "mod", "mov"],
 		"type": "popup",
+		"emit": {
+			"interval": 0,
+			"unit": "s"
+		},
 		"subject": "WATCHER NOTIFICATION - {path}",
 		"timeout": 5,
 		"icon": "auto",
@@ -41,24 +51,31 @@
 {
 	"log": true,
 	"file": null,
+	"restart": true,
 	"verbose": false,
-	"send":
-	{
-		"active": false,
-		"interval": 20,
-		"from": "",
-		"to": null,
-		"subject": "WATCHER LOG [{dt}]",
-		"smtp": 
+	"handlers": [
 		{
-			"server": "",
-			"login": "",
-			"password": "",
-			"protocol": "SSL",
-			"port": 465
-		},
-		"zipped": true
-	}
+			"active": false,
+			"type": "email",
+			"emit": {
+				"interval": 30,
+				"unit": "s"
+			},
+			"from": "",
+			"to": [],
+			"subject": "WATCHER LOG [{dt}]",
+			"smtp": 
+			{
+				"server": "",
+				"login": "",
+				"password": "",
+				"protocol": "SSL",
+				"port": 465
+			},
+			"attachment": false,
+			"zipped": true
+		}
+		]
 },
 "proxy": 
 {

@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
-# from watchdog.observers import Observer
+# from watchdog.observers import Observer # <-- this uses WinAPI implementation which generates duplicate events! See https://github.com/gorakhargosh/watchdog/issues/93
+# TODO: consider switching to watchgod [https://github.com/samuelcolvin/watchgod]
 from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import (PatternMatchingEventHandler, 
                              EVENT_TYPE_MOVED, EVENT_TYPE_DELETED, EVENT_TYPE_CREATED, EVENT_TYPE_MODIFIED)
@@ -26,6 +27,7 @@ class BaseHandler(abc.ABC):
         self.on_before_emit = BaseHandler._default_before_emit if on_before_emit == 'auto' else on_before_emit
         self.on_after_emit = on_after_emit
         self.user_data = {}
+        self._logger_uid = ''
         self._update(dict_handler)
 
     def __del__(self):
@@ -48,14 +50,14 @@ class BaseHandler(abc.ABC):
             self.emit_log()
 
     def _create_logger(self):        
-        _logger_uid = utils.generate_uuid()
-        self._logfile = utils.abspath(f'{_logger_uid}.log')
+        self._logger_uid = utils.generate_uuid()
+        self._logfile = utils.abspath(f'{self._logger_uid}.log')
         if self.active:
-            self.logger = utils.get_logger(_logger_uid if not self.root_logger else None, 
+            self.logger = utils.get_logger(self._logger_uid if not self.root_logger else None, 
                                            self._logfile, 'info', self.emit['interval'], 
                                            self._on_rollover if self.emit['interval'] > 0 else None, self.emit['unit'])
 
-    def close_logger(self, delete_file=True):
+    def close_logger(self, delete_files=True):
         if not self.logger or not self._logfile: 
             return
         for h in self.logger.handlers:
@@ -63,11 +65,12 @@ class BaseHandler(abc.ABC):
                 h.close()
             except:
                 continue
-        if delete_file and os.path.isfile(self._logfile):
-            try:
-                os.remove(self._logfile)
-            except:
-                pass
+        if delete_files:            
+            for f in utils.list_files(f'{self._logger_uid}.*'):
+                try:            
+                    os.remove(f)
+                except:
+                    pass
 
     def _format_str(self, s, event=None, message=None):
         return s.format(path=self.watched_path, dt=utils.get_now().strftime('%Y-%m-%d %H-%M-%S'), 
@@ -92,14 +95,6 @@ class BaseHandler(abc.ABC):
             self.emit_msg(event, message)
             if self.on_after_emit:
                 self.on_after_emit(self, event, message)
-
-    def delete_log(self):
-        try:
-            if self._logfile and os.path.isfile(self._logfile):
-                os.remove(self._logfile)
-            return True
-        except:
-            return False
 
     def __repr__(self):
         return f'Handler [{self.type}] (active = {self.active}, events = {self.events}, path = {self.watched_path}, log = {self._logfile})'
@@ -216,7 +211,7 @@ class BaseWatcher:
     @property
     def has_active_handlers(self): 
         handlers = getattr(self, 'handlers', None)
-        return handlers and any(h.active for h in handlers)
+        return (not handlers is None) and any(h.active for h in handlers)
 
     def __bool__(self):
         return self.has_active_handlers
@@ -267,7 +262,7 @@ class DirWatcher(BaseWatcher):
             fdir = 'DIRECTORY' if event.is_directory else 'FILE'
             msg = ''
             evt = ''
-            src_path = event.src_path[len(watched_path):]
+            src_path = event.src_path[len(watched_path):] if event.src_path else ''
 
             if event.event_type == EVENT_TYPE_CREATED:
                 # created
@@ -319,7 +314,7 @@ class Watcher:
 
     def _create_logs(self):
         # root logger
-        logger = utils.get_logger()
+        utils.get_logger()
         # logging watcher
         if 'logging' in CONFIG and CONFIG['logging'].get('log', False) and CONFIG['logging'].get('file', ''):
             self.logging_watcher = BaseWatcher(CONFIG['logging'], {'create_log': False})
@@ -431,4 +426,4 @@ def main():
 # ============================================================= #
 
 if __name__ == '__main__':
-    main()
+    main()    

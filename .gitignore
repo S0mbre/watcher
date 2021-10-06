@@ -8,3 +8,6 @@
 *.log
 *.zip
 getfileinfo.py
+/dist
+/build
+*.spec

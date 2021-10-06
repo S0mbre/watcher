@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import logging, os, datetime, zipfile, uuid, time
+import logging, os, datetime, zipfile, uuid, time, glob
 from logging.handlers import TimedRotatingFileHandler
 try:
     import zlib
@@ -14,7 +14,7 @@ from globals import CONFIG
 
 class TRFHandler(TimedRotatingFileHandler):
 
-    def __init__(self, filename, when='h', interval=1, on_rollover=None, backupCount=0, utc=False, atTime=None):
+    def __init__(self, filename, when='h', interval=1, on_rollover=None, backupCount=1, utc=False, atTime=None):
         self.on_rollover = on_rollover
         super().__init__(filename, when, interval, backupCount, 'utf-8', True, utc, atTime)
 
@@ -35,7 +35,7 @@ def root_logger():
     return logging.getLogger()
 
 def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_rollover=None, 
-               when='s', keep_backups=0, at_time=None, utc=False):
+               when='s', keep_backups=1, at_time=None, utc=False):
     logger = logging.getLogger(name)
     
     if name is None:
@@ -47,7 +47,7 @@ def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_roll
 
     if (name is None) and ('logging' in CONFIG) and CONFIG['logging'].get('log', False):         
         file_ = CONFIG['logging'].get('file', None)
-        handler = logging.FileHandler(file_, mode='w', encoding='utf-8', delay=True) if file_ else logging.StreamHandler()
+        handler = logging.FileHandler(file_, mode=('w' if CONFIG['logging'].get('restart', True) else 'a'), encoding='utf-8', delay=True) if file_ else logging.StreamHandler()
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
@@ -118,3 +118,8 @@ def zipfiles(files, destination):
     with zipfile.ZipFile(destination, 'w') as z:
         for file in files:                  
             z.write(file, os.path.basename(file), compress_type=ZIP_COMPRESSION, compresslevel=9)
+
+def list_files(mask='*.*', root=None):
+    if not root:
+        root = os.path.dirname(__file__)
+    yield from glob.glob(os.path.join(root, mask))

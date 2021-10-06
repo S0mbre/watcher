@@ -61,7 +61,8 @@ class Proxifier:
         proxy = CONFIG.get('proxy', None)
         if not proxy or not proxy.get('useproxy', False):
             return None
-        return Proxifier(proxy.get('server', None), proxy.get('port', None), proxy.get('type', None), proxy.get('username', None), proxy.get('password', None))
+        return Proxifier(proxy.get('server', None), proxy.get('port', None), proxy.get('type', None), 
+                         proxy.get('username', None), proxy.get('password', None))
 
 # ============================================================= #                                       
 
