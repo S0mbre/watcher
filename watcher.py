@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import logging
 import os
 # from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver as Observer
@@ -14,47 +15,101 @@ import networking
 
 class BaseHandler(abc.ABC):
 
-    def __init__(self, dict_handler=None, watched_path=None, msg_format='{message}'):
+    def __init__(self, dict_handler=None, create_log=True, cleanup_log=True, watched_path=None, 
+                 on_before_emit='auto', on_after_emit=None,
+                 msg_format='{path} >> {message}', root_logger=False):
+        self.create_log = create_log
+        self.cleanup_log = cleanup_log
         self.watched_path = watched_path
         self.msg_format = msg_format
+        self.root_logger = root_logger
+        self.on_before_emit = BaseHandler._default_before_emit if on_before_emit == 'auto' else on_before_emit
+        self.on_after_emit = on_after_emit
+        self.user_data = {}
         self._update(dict_handler)
+
+    def __del__(self):
+        # shutdown logger
+        self.close_logger(self.cleanup_log)
 
     def _update(self, dict_handler=None):
         if not dict_handler: 
             dict_handler = {}
         self.active = dict_handler.get('active', False)
-        self.events = dict_handler.get('events', ["cre", "del", "mod", "mov"])
+        self.events = dict_handler.get('events', [])
         self.type = None
         self.emit = dict_handler.get('emit', {'interval': 0, 'unit': 's'})
-        self._create_logger()
+        self.logger: logging.Logger = None
+        self._logfile = ''
+        if self.create_log: self._create_logger()
 
     def _on_rollover(self, trf_handler):
-        if self.active: self.emit_log()
+        if self.active: 
+            self.emit_log()
 
-    def _create_logger(self):
-        self._logger_uid = utils.generate_uuid()
-        self._logfile = utils.abspath(f'{self._logger_uid}.log')
-        self.logger = None
+    def _create_logger(self):        
+        _logger_uid = utils.generate_uuid()
+        self._logfile = utils.abspath(f'{_logger_uid}.log')
         if self.active:
-            self.logger = utils.get_logger(f'app.{self._logger_uid}', self._logfile, 'info', self.emit['interval'], 
+            self.logger = utils.get_logger(_logger_uid if not self.root_logger else None, 
+                                           self._logfile, 'info', self.emit['interval'], 
                                            self._on_rollover if self.emit['interval'] > 0 else None, self.emit['unit'])
 
-    def _format_str(self, s):
+    def close_logger(self, delete_file=True):
+        if not self.logger or not self._logfile: 
+            return
+        for h in self.logger.handlers:
+            try:
+                h.close()
+            except:
+                continue
+        if delete_file and os.path.isfile(self._logfile):
+            try:
+                os.remove(self._logfile)
+            except:
+                pass
+
+    def _format_str(self, s, event=None, message=None):
         return s.format(path=self.watched_path, dt=utils.get_now().strftime('%Y-%m-%d %H-%M-%S'), 
-                        events=', '.join(self.events), type=str(self.type), logid=self._logger_uid)
+                        events=', '.join(self.events), type=str(self.type), event=event, message=message)
+
+    @staticmethod
+    def _default_before_emit(obj, event, msg):
+        if not any(['cre' in obj.events and event == 'cre', 'mod' in obj.events and event == 'mod',
+                    'mov' in obj.events and event in ('mov', 'ren'), 'del' in obj.events and event == 'del']):
+            return False
+        utils.log(f"=== Handling '{event}' event with {obj} ...", how='debug')
+        return True
 
     def trigger(self, event, message):
-        if not self.active: return
-        utils.log(self.msg_format.format(message=message, event=event), self.logger)
+        if not self.active: 
+            return        
+        if self.on_before_emit and not self.on_before_emit(self, event, message):
+            return
+        if self.logger and not self.root_logger:
+            utils.log(self._format_str(self.msg_format, message=message, event=event), self.logger)
         if self.emit['interval'] <= 0:
             self.emit_msg(event, message)
+            if self.on_after_emit:
+                self.on_after_emit(self, event, message)
+
+    def delete_log(self):
+        try:
+            if self._logfile and os.path.isfile(self._logfile):
+                os.remove(self._logfile)
+            return True
+        except:
+            return False
+
+    def __repr__(self):
+        return f'Handler [{self.type}] (active = {self.active}, events = {self.events}, path = {self.watched_path}, log = {self._logfile})'
 
     @abc.abstractmethod
     def emit_msg(self, event, message):
         pass
 
     @abc.abstractmethod
-    def emit_log(self):
+    def emit_log(self, logfile=None):
         pass
 
 # ============================================================= #
@@ -63,7 +118,7 @@ class EmailHandler(BaseHandler):
 
     def _update(self, dict_handler=None):
         super()._update(dict_handler)
-        self.type = 'email'
+        self.type = dict_handler.get('type', 'email')
         self.sender = dict_handler.get('from', None)
         self.receivers = dict_handler.get('to', [])
         self.subject = dict_handler.get('subject', 'WATCHER NOTIFICATION - {path}')
@@ -75,16 +130,17 @@ class EmailHandler(BaseHandler):
             self.active = False
 
     def emit_msg(self, event, message):
-        networking.send_email(message, self._format_str(self.subject), self.sender, self.receivers, self.smtp)
+        if self.active:
+            networking.send_email(message, self._format_str(self.subject), self.sender, self.receivers, self.smtp)
 
-    def emit_log(self):
-        dafile = self._logfile
-        if not os.path.isfile(dafile):
-            return
+    def emit_log(self, logfile=None):
+        if not self.active: return
+        dafile = logfile if not logfile is None else ((self._logfile if not self.root_logger else CONFIG['logging'].get('file', '')) or '')
+        if not os.path.isfile(dafile): return
         if self.attachment:
             if self.zipped:
                 # zip log file
-                zfile = os.path.splitext(self._logfile)[0] + '.zip'
+                zfile = os.path.splitext(dafile)[0] + '.zip'
                 utils.zipfiles((dafile,), zfile)
                 dafile = zfile
             networking.send_email(f'ATTACHED: {os.path.basename(dafile)}', self._format_str(self.subject), 
@@ -100,13 +156,14 @@ class PopupHandler(BaseHandler):
 
     def _update(self, dict_handler=None):
         super()._update(dict_handler)
-        self.type = 'popup'
+        self.type = dict_handler.get('type', 'popup')
         self.subject = dict_handler.get('subject', 'WATCHER NOTIFICATION - {path}')
         self.ticker = dict_handler.get('ticker', 'WATCHER NOTIFICATION - {path}')
         self.icon = dict_handler.get('icon', 'auto')
         self.timeout = dict_handler.get('timeout', 5)
 
     def emit_msg(self, event, message):
+        if not self.active: return
         ico = self.icon
         if ico: 
             ico = utils.abspath(f'img/ico_{event}.ico') if ico == 'auto' else os.path.abspath(ico)
@@ -114,56 +171,98 @@ class PopupHandler(BaseHandler):
             ico = ''
         utils.sys_notify(self._format_str(self.subject), message, self.timeout, self._format_str(self.ticker), ico)
 
-    def emit_log(self):
-        # TODO: handle toaster activation event to open log file
-        pass
+    def emit_log(self, logfile=None):
+        # TODO: handle toaster activation event (click) to open log file
+        if not self.active: return
+        dafile = logfile if not logfile is None else ((self._logfile if not self.root_logger else CONFIG['logging'].get('file', '')) or '')
+        if not os.path.isfile(dafile): return
+        # read log file
+        msg = open(dafile, 'r').read().strip()
+        if not msg: return
+        utils.sys_notify(self._format_str(self.subject), msg, self.timeout, self._format_str(self.ticker), '')
 
 # ============================================================= #
 
-class DirWatcher:
+class BaseWatcher:
 
-    def __init__(self, watcher):
-        self._update(watcher)
+    MHDLR = {'email': EmailHandler, 'popup': PopupHandler}
+
+    def __init__(self, data, handler_kwargs={}):
+        self.handlers = []
+        self._handler_kwargs = handler_kwargs.copy() if handler_kwargs else {}
+        self._it = None
+        self._update(data)
+
+    def _update(self, data):
+        self._spawn_handlers(data.get('handlers', []))
+
+    def _spawn_handlers(self, handlers):
+        self.handlers.clear()
+        self.add_handlers(handlers)
+
+    def add_handlers(self, handlers, handler_kwargs=None):
+        if not handlers: return
+        if handler_kwargs is None:
+            handler_kwargs = self._handler_kwargs
+        for h in handlers:
+            cls_ = BaseWatcher.MHDLR.get(h.get('type', ''), None)
+            if cls_:
+                self.handlers.append(cls_(h, **handler_kwargs))
+
+    def trigger_all(self, event, message):
+        for handler in self.handlers:
+            handler.trigger(event, message)
+
+    @property
+    def has_active_handlers(self): 
+        handlers = getattr(self, 'handlers', None)
+        return handlers and any(h.active for h in handlers)
+
+    def __bool__(self):
+        return self.has_active_handlers
+
+    def __len__(self):
+        return len(self.handlers)
+
+    def __iter__(self):
+        self._it = iter(self.handlers)
+        return self._it
+
+    def __next__(self):
+        return next(self._it)
+
+# ============================================================= #
+
+class DirWatcher(BaseWatcher):
 
     @property
     def is_path_ok(self):
         path = getattr(self, 'path', '')
         return os.path.isdir(path)
 
-    @property
-    def has_handlers(self):        
-        return self.handlers and any(h.get('active', False) for h in self.handlers)
-
-    def _update(self, watcher):
-        self.__dir__.update(watcher)
-        path = getattr(self, 'path', '')
-        if os.path.isdir(path):
-            self.path = os.path.abspath(path)
-        else:
+    def _update(self, data):      
+        self.path = data.get('path', '')
+        if os.path.isdir(self.path):
+            self.path = os.path.abspath(self.path)
+        else:            
+            utils.log(f'Empty or non-existent path: "{self.path}"!', how='warning')
             self.path = ''
-            utils.log(f'Empty or non-existent path: "{path}"!', how='warning')
-        self.types = getattr(self, 'types', ['*'])
-        self.recursive = getattr(self, 'recursive', True)
-        self.ignore_types = getattr(self, 'ignore_types', None)
-        self.ignore_dirs = getattr(self, 'ignore_dirs', None)
-        self.case_sensitive = getattr(self, 'case_sensitive', False)
-        self.handlers = getattr(self, 'handlers', [])
-        self._create_handler()
-
-    def _create_handler(self):
+        self._handler_kwargs['watched_path'] = self.path
+        self.types =  data.get('types', ['*'])
+        self.recursive =  data.get('recursive', True)
+        self.ignore_types =  data.get('ignore_types', None)
+        self.ignore_dirs =  data.get('ignore_dirs', None)
+        self.case_sensitive =  data.get('case_sensitive', False)
+        super()._update(data)
         self.handler = None
-        if not self.is_path_ok or not self.has_handlers:
-            return
-        self.handler = PatternMatchingEventHandler(self.types, self.ignore_types, self.ignore_dirs, self.case_sensitive)
-        self.handler.on_any_event = DirWatcher.event_handler(self.handlers, self.path)
-
-    def _create_loggers(self):
-        pass
+        if self.path:            
+            self.handler = PatternMatchingEventHandler(self.types, self.ignore_types, self.ignore_dirs, self.case_sensitive)
+            self.handler.on_any_event = DirWatcher.event_handler(self, self.path)
 
     @staticmethod
-    def event_handler(handlers, watched_path):       
+    def event_handler(watcher: BaseWatcher, watched_path):       
         def wrapped_handler(event):
-            if not handlers: return
+            if not bool(watcher): return
 
             fdir = 'DIRECTORY' if event.is_directory else 'FILE'
             msg = ''
@@ -195,30 +294,13 @@ class DirWatcher:
                 return
             if not msg: return
 
-            msg = f'{watched_path} >> {msg}'
-            utils.log('>>> ' + msg)
-
-            for handler in handlers:
-                if not handler.get('active', False): continue
-                events = handler.get('events', [])
-                if not events: continue
-                if not any(['cre' in events and evt == 'cre', 'mod' in events and evt == 'mod',
-                            'mov' in events and evt in ('mov', 'ren'), 'del' in events and evt == 'del']):
-                    continue
-
-                utils.log(f"=== Handling '{evt}' event with {handler['type']} type handler...", how='debug')
-
-                if handler['type'] == 'email':
-                    utils.log('--- Sending email to: ' + '; '.join(handler['to']))
-                    networking.send_email(msg, handler['subject'].format(path=watched_path), handler['from'], handler['to'], handler['smtp'])
-
-                elif handler['type'] == 'popup':
-                    ico = handler.get('icon', '')
-                    if ico: ico = utils.abspath(f'img/ico_{evt}.ico') if ico == 'auto' else os.path.abspath(ico)
-                    if not os.path.isfile(ico): ico = ''
-                    utils.sys_notify(handler['subject'].format(path=watched_path), msg, handler.get('timeout', 10), (handler.get('ticker', '') or '').format(path=watched_path), ico)
+            utils.log(f'>>> {watched_path} >> {msg}')
+            watcher.trigger_all(evt, msg)
 
         return wrapped_handler
+
+    def __bool__(self):
+        return self.has_active_handlers and self.is_path_ok
 
 
 # ============================================================= #
@@ -226,115 +308,89 @@ class DirWatcher:
 class Watcher:
 
     def __init__(self):
+        self.logging_watcher: BaseWatcher = None
         self.observer: Observer = None
-        self._count = 0
+        self.watchers = []
+        self._create_logs()
+        self.schedule_watchers()
 
     def __del__(self):
         self.stop()
 
-    @staticmethod
-    def event_handler(handlers, watched_path):       
-        def wrapped_handler(event):
-            if not handlers: return
+    def _create_logs(self):
+        # root logger
+        logger = utils.get_logger()
+        # logging watcher
+        if 'logging' in CONFIG and CONFIG['logging'].get('log', False) and CONFIG['logging'].get('file', ''):
+            self.logging_watcher = BaseWatcher(CONFIG['logging'], {'create_log': False})
 
-            fdir = 'DIRECTORY' if event.is_directory else 'FILE'
-            msg = ''
-            evt = ''
-            src_path = event.src_path[len(watched_path):]
+    def schedule_watchers(self):
+        self.watchers.clear()
 
-            if event.event_type == EVENT_TYPE_CREATED:
-                # created
-                msg = f'CREATED {fdir} "{src_path}"'
-                evt = 'cre'
-            elif event.event_type == EVENT_TYPE_MODIFIED:
-                # modified
-                msg = f'MODIFIED {fdir} "{src_path}"'
-                evt = 'mod'
-            elif event.event_type == EVENT_TYPE_MOVED:
-                # moved
-                dest_path = event.dest_path[len(watched_path):]
-                if os.path.dirname(event.src_path) == os.path.dirname(event.dest_path):
-                    msg = f'RENAMED {fdir} "{src_path}" ==> "{os.path.basename(dest_path)}"'
-                    evt = 'ren'
-                else:
-                    msg = f'MOVED {fdir} "{src_path}" ==> "{dest_path}"'
-                    evt = 'mov'
-            elif event.event_type == EVENT_TYPE_DELETED:
-                # deleted
-                msg = f'DELETED {fdir} "{src_path}"'
-                evt = 'del'
-            else:
-                return
-            if not msg: return
+        if not CONFIG.get('watchers', None):
+            utils.log('No watchers set in config file!', how='warning')
+            return 0
 
-            msg = f'{watched_path} >> {msg}'
-            utils.log('>>> ' + msg)
+        self.stop()
+        try:   
+            self.observer = Observer(CONFIG.get('poll_interval', DEFAULT_POLL_SECONDS))
+        except Exception as err:
+            utils.log(err, how='exception')
+            return 0
 
-            for handler in handlers:
-                if not handler.get('active', False): continue
-                events = handler.get('events', [])
-                if not events: continue
-                if not any(['cre' in events and evt == 'cre', 'mod' in events and evt == 'mod',
-                            'mov' in events and evt in ('mov', 'ren'), 'del' in events and evt == 'del']):
-                    continue
+        for w in CONFIG['watchers']:
+            try:
+                watcher = DirWatcher(w)
+                if watcher:
+                    self.observer.schedule(watcher.handler, watcher.path, watcher.recursive)
+                    self.watchers.append(watcher)
+            except Exception as err:
+                utils.log(err, how='exception')
 
-                utils.log(f"=== Handling '{evt}' event with {handler['type']} type handler...", how='debug')
+        return len(self.watchers)
 
-                if handler['type'] == 'email':
-                    utils.log('--- Sending email to: ' + '; '.join(handler['to']))
-                    networking.send_email(msg, handler['subject'].format(path=watched_path), handler['from'], handler['to'], handler['smtp'])
-
-                elif handler['type'] == 'popup':
-                    ico = handler.get('icon', '')
-                    if ico: ico = utils.abspath(f'img/ico_{evt}.ico') if ico == 'auto' else os.path.abspath(ico)
-                    if not os.path.isfile(ico): ico = ''
-                    utils.sys_notify(handler['subject'].format(path=watched_path), msg, handler.get('timeout', 10), (handler.get('ticker', '') or '').format(path=watched_path), ico)
-
-        return wrapped_handler
-
-    def check_send_log(self):
-        if not all( [LOGGER, CONFIG['logging'].get('send', False), 
-                     CONFIG['logging']['send'].get('active', False),
-                     CONFIG['logging']['send'].get('from', False),
-                     CONFIG['logging']['send'].get('to', False),
-                     CONFIG['logging']['send'].get('smtp', False)] ): 
-            return
-
+    def _check_send_log(self):
+        if not self.logging_watcher: return
         dafile = CONFIG['logging'].get('file', '') or ''
         if not os.path.isfile(dafile): 
             return
-
-        if not getattr(self, '_last_time', None):
-            self._last_time = utils.get_now()
+        if not getattr(self, '_last_mdtime', None):
             self._last_mdtime = os.path.getmtime(dafile)
-            return
-
-        if utils.get_timedelta(self._last_time) >= CONFIG['logging']['send'].get('interval', 60) and os.path.getmtime(dafile) > self._last_mdtime:
-            # send log
-            if CONFIG['logging']['send'].get('zipped', False):
-                # zip log file
-                zfile = os.path.splitext(dafile)[0] + '.zip'
-                utils.zipfiles((dafile,), zfile)
-                dafile = zfile
-            networking.send_email(f'ATTACHED: {os.path.basename(dafile)}', 
-                                  CONFIG['logging']['send']['subject'].format(dt=self._last_time.strftime('%Y-%m-%d %H-%M-%S')), 
-                                  CONFIG['logging']['send']['from'], CONFIG['logging']['send']['to'], CONFIG['logging']['send']['smtp'],
-                                  attachments=(dafile,))
-            self._last_time = utils.get_now()
-            self._last_mdtime = os.path.getmtime(dafile)
+            return        
+        if os.path.getmtime(dafile) > self._last_mdtime:
+            b_emitted = False
+            for h in self.logging_watcher:
+                if not 'last_time' in h.user_data:
+                    h.user_data['last_time'] = utils.get_now()
+                else:
+                    target_interval = utils.span_to_seconds(h.emit['interval'], h.emit['unit'])
+                    current_interval = utils.get_timedelta(h.user_data['last_time'])
+                    # print(f'Target interval = {int(target_interval)}, current passed = {int(current_interval)} sec.')
+                    if current_interval >= target_interval:
+                        # print(f'Emitting {h} ...')
+                        h.emit_log(dafile)
+                        h.user_data['last_time'] = utils.get_now()
+                        b_emitted = True
+            if b_emitted:
+                self._last_mdtime = os.path.getmtime(dafile)
 
     def run(self):
-        if not self.observer and not self.schedule_watchers():
+        if not self.observer and not (self.watchers or self.schedule_watchers()):
+            utils.log('No watchers!', how='error')
             return
 
         try:
-            utils.log(f"Starting observer with {self._count} watchers ({self._get_watcher_paths()}). Polling every {self.observer.timeout} sec ...")
+            utils.log(f"Starting observer with {len(self)} watchers ({self._get_watcher_paths()}). Polling every {self.observer.timeout} sec ...")
             self.observer.start()
             while True:
-                self.check_send_log()
+                try:
+                    self._check_send_log()
+                except Exception as err:
+                    utils.log(err, how='exception')
+                utils.sleep()
 
         except KeyboardInterrupt:
-            utils.log("User interrupt", how='warning')
+            utils.log('User interrupt', how='warning')
             self.stop()
 
         except Exception as err:
@@ -348,49 +404,23 @@ class Watcher:
             try:
                 utils.log(f"Stopping observer ...")
                 self.observer.stop()
-                self.observer.join()                               
+                self.observer.join()   
+
+            except RuntimeError:
+                pass
 
             except Exception as err:
                 utils.log(err, how='exception')
 
-            self._count = 0
-            utils.log(f"Observer stopped")
+            self.watchers.clear()
+            utils.log('Observer stopped')
             self.observer = None
 
     def _get_watcher_paths(self):
         return [w['path'] for w in CONFIG['watchers'] if 'path' in w] if 'watchers' in CONFIG else []
 
-    def schedule_watchers(self):
-        self._count = 0
-
-        if not CONFIG.get('watchers', None):
-            utils.log('No watchers set in config file!', how='warning')
-            return 0
-
-        self.stop()        
-        self.observer = Observer(CONFIG.get('poll_interval', DEFAULT_POLL_SECONDS))
-
-        j = 0
-        for i, w in enumerate(CONFIG['watchers']):
-            path = w.get('path', '')
-            if path: path = os.path.abspath(path)
-            if not os.path.isdir(path):
-                utils.log(f'No path set for watcher {i}', how='warning')
-                continue
-
-            if not w.get('handlers', None):
-                utils.log(f'No handlers set for watcher {i}', how='warning')
-                continue
-
-            handler = PatternMatchingEventHandler(w.get('types', ['*']), w.get('ignore_types', None), w.get('ignore_dirs', None), w.get('case_sensitive', False))
-            handler.on_any_event = Watcher.event_handler(w['handlers'], path)
-
-            self.observer.schedule(handler, path, recursive=w.get('recursive', True))
-            j += 1
-
-        self._count = j
-        return self._count
-        
+    def __len__(self):
+        return len(self.watchers)
 
 # ============================================================= #
 

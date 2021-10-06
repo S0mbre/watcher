@@ -9,8 +9,6 @@ if not os.path.isfile(CONFIG_FILE):
     raise Exception('No config file found!')
 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
     CONFIG = json.load(f)
-
-LOGGER = None
 DEFAULT_POLL_SECONDS = 10
 
 # ============================================================= #
