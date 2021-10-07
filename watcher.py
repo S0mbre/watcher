@@ -99,12 +99,28 @@ class BaseHandler(abc.ABC):
     def __repr__(self):
         return f'Handler [{self.type}] (active = {self.active}, events = {self.events}, path = {self.watched_path}, log = {self._logfile})'
 
-    @abc.abstractmethod
     def emit_msg(self, event, message):
+        if not self.active: return
+        try:
+            self._emit_msg(event, message)
+        except Exception as err:
+            utils.log(err, how='exception')
+
+    def emit_log(self, logfile=None):
+        if not self.active: return
+        dafile = logfile if not logfile is None else ((self._logfile if not self.root_logger else CONFIG['logging'].get('file', '')) or '')
+        if not os.path.isfile(dafile): return
+        try:
+            self._emit_log(dafile)
+        except Exception as err:
+            utils.log(err, how='exception')
+
+    @abc.abstractmethod
+    def _emit_msg(self, event, message):
         pass
 
     @abc.abstractmethod
-    def emit_log(self, logfile=None):
+    def _emit_log(self, logfile):
         pass
 
 # ============================================================= #
@@ -124,22 +140,22 @@ class EmailHandler(BaseHandler):
             utils.log(f'The following parameters in Email handler must not be empty: "from", "to", "smtp"!', how='warning')
             self.active = False
 
-    def emit_msg(self, event, message):
-        if self.active:
-            networking.send_email(message, self._format_str(self.subject), self.sender, self.receivers, self.smtp)
+    def _emit_msg(self, event, message):
+        networking.send_email(message, self._format_str(self.subject), self.sender, self.receivers, self.smtp)
 
-    def emit_log(self, logfile=None):
-        if not self.active: return
-        dafile = logfile if not logfile is None else ((self._logfile if not self.root_logger else CONFIG['logging'].get('file', '')) or '')
-        if not os.path.isfile(dafile): return
+    def _emit_log(self, logfile):
+        dafile = logfile
         if self.attachment:
             if self.zipped:
                 # zip log file
                 zfile = os.path.splitext(dafile)[0] + '.zip'
-                utils.zipfiles((dafile,), zfile)
-                dafile = zfile
+                try:
+                    utils.zipfiles((dafile,), zfile)
+                    dafile = zfile
+                except Exception as err:
+                    utils.log(err, how='exception')
             networking.send_email(f'ATTACHED: {os.path.basename(dafile)}', self._format_str(self.subject), 
-                                  self.sender, self.receivers, self.smtp, attachments=(dafile,))
+                                      self.sender, self.receivers, self.smtp, attachments=(dafile,))
         else:
             msg = open(dafile, 'r').read().strip()
             if msg:
@@ -157,8 +173,7 @@ class PopupHandler(BaseHandler):
         self.icon = dict_handler.get('icon', 'auto')
         self.timeout = dict_handler.get('timeout', 5)
 
-    def emit_msg(self, event, message):
-        if not self.active: return
+    def _emit_msg(self, event, message):        
         ico = self.icon
         if ico: 
             ico = utils.abspath(f'img/ico_{event}.ico') if ico == 'auto' else os.path.abspath(ico)
@@ -166,15 +181,11 @@ class PopupHandler(BaseHandler):
             ico = ''
         utils.sys_notify(self._format_str(self.subject), message, self.timeout, self._format_str(self.ticker), ico)
 
-    def emit_log(self, logfile=None):
+    def _emit_log(self, logfile):
         # TODO: handle toaster activation event (click) to open log file
-        if not self.active: return
-        dafile = logfile if not logfile is None else ((self._logfile if not self.root_logger else CONFIG['logging'].get('file', '')) or '')
-        if not os.path.isfile(dafile): return
-        # read log file
-        msg = open(dafile, 'r').read().strip()
-        if not msg: return
-        utils.sys_notify(self._format_str(self.subject), msg, self.timeout, self._format_str(self.ticker), '')
+        msg = open(logfile, 'r').read().strip()
+        if msg:
+            utils.sys_notify(self._format_str(self.subject), msg, self.timeout, self._format_str(self.ticker), '')
 
 # ============================================================= #
 
