@@ -2,7 +2,9 @@
 **/.vscode
 *.pyc
 *.json
+*.yaml
 !config.json
+!config.yaml
 *.txt
 !requirements.txt
 *.log

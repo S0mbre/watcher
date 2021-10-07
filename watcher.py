@@ -375,6 +375,7 @@ class Watcher:
             return
 
         try:
+            utils.log(f"Using config file: {CONFIG_FILE}")
             utils.log(f"Starting observer with {len(self)} watchers ({self._get_watcher_paths()}). Polling every {self.observer.timeout} sec ...")
             self.observer.start()
             while True:
@@ -426,4 +427,4 @@ def main():
 # ============================================================= #
 
 if __name__ == '__main__':
-    main()    
+    main()
