@@ -29,6 +29,11 @@ class TRFHandler(TimedRotatingFileHandler):
 
 # ============================================================= #
 
+def abspath(path, root=None):
+    if root is None: root = ROOT_DIR
+    root = os.path.abspath(root)
+    return os.path.join(root, path)
+
 def generate_uuid():
     return uuid.uuid4().hex
 
@@ -38,15 +43,15 @@ def sleep(sec=1.0):
 def root_logger():
     return logging.getLogger()
 
-def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_rollover=None, 
+def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_rollover=None,
                when='s', keep_backups=1, at_time=None, utc=False):
     logger = logging.getLogger(name)
-    
+
     if name is None:
         logger.setLevel(logging.DEBUG if CONFIG['logging'].get('verbose', False) else logging.INFO)
     else:
         logger.setLevel(level.upper())
-    
+
     fmt = CONFIG['logging'].get('format', None)
     if fmt:
         fmap = {'time': 'asctime', 'logger': 'name', 'path': 'watched_path', 'level': 'levelname'}
@@ -65,12 +70,14 @@ def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_roll
         time_fmt = fmt.get('timeformat', '%m/%d/%Y %I:%M:%S')
     else:
         str_fmt = '{asctime} [{name}] [{levelname}] >>> {watched_path} :: {event} >> {message}'
-        time_fmt = '%m/%d/%Y %I:%M:%S' 
-    
+        time_fmt = '%m/%d/%Y %I:%M:%S'
+
     formatter = logging.Formatter(str_fmt, time_fmt, '{')
 
-    if (name is None) and ('logging' in CONFIG) and CONFIG['logging'].get('log', False):         
+    if (name is None) and ('logging' in CONFIG) and CONFIG['logging'].get('log', False):
         file_ = CONFIG['logging'].get('file', None)
+        if file_ and not os.path.isabs(file_):
+            file_ = abspath(file_)
         handler = logging.FileHandler(file_, mode=('w' if CONFIG['logging'].get('restart', True) else 'a'), encoding='utf-8', delay=True) if file_ else logging.StreamHandler()
         handler.setFormatter(formatter)
         logger.addHandler(handler)
@@ -89,13 +96,8 @@ def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_roll
 
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    
-    return logger
 
-def abspath(path, root=None):
-    if root is None: root = ROOT_DIR
-    root = os.path.abspath(root)
-    return os.path.join(root, path)
+    return logger
 
 def log(what, logger=None, how='info', **kwargs):
     logger = logger or root_logger()
@@ -145,10 +147,8 @@ def span_to_seconds(value, unit='s'):
 
 def zipfiles(files, destination):
     with zipfile.ZipFile(destination, 'w') as z:
-        for file in files:                  
+        for file in files:
             z.write(file, os.path.basename(file), compress_type=ZIP_COMPRESSION, compresslevel=9)
 
 def list_files(mask='*.*', root=None):
-    if not root:
-        root = os.path.dirname(__file__)
-    yield from glob.glob(os.path.join(root, mask))
+    yield from glob.glob(abspath(mask, root))

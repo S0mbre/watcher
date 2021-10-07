@@ -21,7 +21,7 @@ class Proxifier:
             self._get_sysproxy()
         else:
             self.proxy_server = proxy_server
-            self.proxy_port = proxy_port        
+            self.proxy_port = proxy_port
 
     def _get_sysproxy(self, setvars=True):
         proxy_server, proxy_port, proxy_username, proxy_password = (None, None, None, None)
@@ -52,8 +52,8 @@ class Proxifier:
         return (proxy_server, proxy_port)
 
     def get_socket(self, source_address, host, port, timeout=None):
-        return socks.create_connection((host, port), timeout, source_address, 
-                                       proxy_type=self.proxy_type, proxy_addr=self.proxy_server, proxy_port=self.proxy_port, 
+        return socks.create_connection((host, port), timeout, source_address,
+                                       proxy_type=self.proxy_type, proxy_addr=self.proxy_server, proxy_port=self.proxy_port,
                                        proxy_username=self.proxy_username, proxy_password=self.proxy_password)
 
     @staticmethod
@@ -61,17 +61,17 @@ class Proxifier:
         proxy = CONFIG.get('proxy', None)
         if not proxy or not proxy.get('useproxy', False):
             return None
-        return Proxifier(proxy.get('server', None), proxy.get('port', None), proxy.get('type', None), 
+        return Proxifier(proxy.get('server', None), proxy.get('port', None), proxy.get('type', None),
                          proxy.get('username', None), proxy.get('password', None))
 
-# ============================================================= #                                       
+# ============================================================= #
 
 class SMTP_Proxy(smtplib.SMTP):
 
-    def __init__(self, host='', port=0, local_hostname=None, timeout=object(), source_address=None, 
+    def __init__(self, host='', port=0, local_hostname=None, timeout=object(), source_address=None,
                  proxifier: Proxifier=None):
         self._proxifier = proxifier
-        super().__init__(host, port, local_hostname, timeout, source_address)        
+        super().__init__(host, port, local_hostname, timeout, source_address)
 
     def _get_socket(self, host, port, timeout):
         if not self._proxifier:
@@ -79,15 +79,15 @@ class SMTP_Proxy(smtplib.SMTP):
         if timeout is not None and not timeout:
             raise ValueError('Non-blocking socket (timeout=0) is not supported')
         if self.debuglevel > 0:
-            self._print_debug('connect: to', (host, port), self.source_address)        
+            self._print_debug('connect: to', (host, port), self.source_address)
         return self._proxifier.get_socket(self.source_address, host, port, timeout)
 
 # ============================================================= #
 
 class SMTP_SSL_Proxy(smtplib.SMTP_SSL):
 
-    def __init__(self, host='', port=0, local_hostname=None, keyfile=None, certfile=None, timeout=object(), source_address=None, context=None, 
-                 proxifier: Proxifier=None):        
+    def __init__(self, host='', port=0, local_hostname=None, keyfile=None, certfile=None, timeout=object(), source_address=None, context=None,
+                 proxifier: Proxifier=None):
         self._proxifier = proxifier
         super().__init__(host, port, local_hostname, keyfile, certfile, timeout, source_address, context)
 
@@ -126,7 +126,7 @@ def send_email(body, subject, sender, receivers, smtp, sender_name='Watcher', at
 
         with smtp_class(smtp['server'], smtp['port'], proxifier=Proxifier.get_proxifier()) as emailer:
             emailer.login(smtp['login'], smtp['password'])
-            if not is_ssl: 
+            if not is_ssl:
                 emailer.starttls()
             emailer.sendmail(sender, receivers, msg.as_string())
 
