@@ -8,7 +8,11 @@ except:
     ZIP_COMPRESSION = zipfile.ZIP_STORED
 from plyer import notification
 
-from globals import CONFIG
+from globals import ROOT_DIR, CONFIG
+
+# ============================================================= #
+
+EXTRA_PARAMS = ['watched_path', 'event', 'source', 'destination']
 
 # ============================================================= #
 
@@ -42,8 +46,28 @@ def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_roll
         logger.setLevel(logging.DEBUG if CONFIG['logging'].get('verbose', False) else logging.INFO)
     else:
         logger.setLevel(level.upper())
-
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', '%m/%d/%Y %I:%M:%S')
+    
+    fmt = CONFIG['logging'].get('format', None)
+    if fmt:
+        fmap = {'time': 'asctime', 'logger': 'name', 'path': 'watched_path', 'level': 'levelname'}
+        fields = fmt.get('fields', ['{asctime}', '[{name}]', '[{levelname}]', '>>> {watched_path}', ':: {event}',  '>> {message}'])
+        fields_ = []
+        for f in fields:
+            for k, v in fmap.items():
+                f = f.replace(k, v)
+            fields_.append(f)
+        fields = fields_
+        if fmt.get('csv', False):
+            fields = [f'"{f}"' for f in fields]
+            str_fmt = ';'.join(fields)
+        else:
+            str_fmt = ' '.join(fields)
+        time_fmt = fmt.get('timeformat', '%m/%d/%Y %I:%M:%S')
+    else:
+        str_fmt = '{asctime} [{name}] [{levelname}] >>> {watched_path} :: {event} >> {message}'
+        time_fmt = '%m/%d/%Y %I:%M:%S' 
+    
+    formatter = logging.Formatter(str_fmt, time_fmt, '{')
 
     if (name is None) and ('logging' in CONFIG) and CONFIG['logging'].get('log', False):         
         file_ = CONFIG['logging'].get('file', None)
@@ -69,26 +93,31 @@ def get_logger(name=None, logfile=None, level='info', rotate_interval=0, on_roll
     return logger
 
 def abspath(path, root=None):
-    if not root:
-        root = os.path.dirname(__file__)
+    if root is None: root = ROOT_DIR
     root = os.path.abspath(root)
     return os.path.join(root, path)
 
 def log(what, logger=None, how='info', **kwargs):
     logger = logger or root_logger()
     if not logger: return
+    if not kwargs:
+        kwargs = {e: '' for e in EXTRA_PARAMS}
+    else:
+        for k in EXTRA_PARAMS:
+            if (not k in kwargs) or (not kwargs[k]):
+                kwargs[k] = ''
     if how == 'info':
-        logger.info(what, **kwargs)
+        logger.info(what, extra=kwargs)
     elif how == 'warn':
-        logger.warning(what, **kwargs)
+        logger.warning(what, extra=kwargs)
     elif how == 'error':
-        logger.error(what, **kwargs)
+        logger.error(what, extra=kwargs)
     elif how == 'debug':
-        logger.debug(what, **kwargs)
+        logger.debug(what, extra=kwargs)
     elif how == 'critical':
-        logger.critical(what, **kwargs)
+        logger.critical(what, extra=kwargs)
     elif how == 'exception':
-        logger.exception(what, **kwargs)
+        logger.exception(what, extra=kwargs)
 
 def sys_notify(title, message, timeout=10, ticker='', icon=''):
     notification.notify(title, message, 'Watcher', icon, timeout, ticker)

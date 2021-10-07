@@ -51,6 +51,18 @@ logging:
   file: null                    # log file (null = STDOUT console)
   restart: true                 # whether to rewrite the existing log file (false = append)
   verbose: false                # verbose logging is OFF (includes debug messages)
+  format:                       # log record formatting
+    fields:                     # fields in each log record: supports placeholders in curly brackets as detailed below
+      - '{time}'                # current date and time (see 'timeformat' below)
+      - '{logger}'              # ID of logger
+      - '{path}'                # watched directory path
+      - '{event}'               # watched event (see 'events' property in a handler)
+      - '{level}'               # message logging level: DEBUG, ERROR, EXCEPTION, CRITICAL, INFO, WARN
+      - '{message}'             # body of the log message
+      - '{source}'              # source path (for any event)
+      - '{destination}'         # destination path (non-empty only for move / rename events)
+    csv: true                   # output log records in CSV format (fields are quoted and separated by ';')
+    timeformat: '%m/%d/%Y %I:%M:%S' # date/time format template (see Python docs for placeholder reference)
   handlers:                     # list of handlers to handle the root log file (e.g. send by email) -- see watchers > handlers above
     - active: false
       type: email

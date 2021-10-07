@@ -4,6 +4,8 @@ from ruamel.yaml import YAML
 
 # ============================================================= #
 
+ROOT_DIR = sys._MEIPASS if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+
 CONFIG_FILE = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else 'config.yaml')
 
 if not os.path.isfile(CONFIG_FILE):

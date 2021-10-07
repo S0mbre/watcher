@@ -81,30 +81,31 @@ class BaseHandler(abc.ABC):
         if not any(['cre' in obj.events and event == 'cre', 'mod' in obj.events and event == 'mod',
                     'mov' in obj.events and event in ('mov', 'ren'), 'del' in obj.events and event == 'del']):
             return False
-        utils.log(f"=== Handling '{event}' event with {obj} ...", how='debug')
+        utils.log(f"Handling '{event}' event with {obj} ...", how='debug', event=event, watched_path=obj.watched_path)
         return True
 
-    def trigger(self, event, message):
+    def trigger(self, event, message, src_path, dest_path):
         if not self.active: 
             return        
         if self.on_before_emit and not self.on_before_emit(self, event, message):
             return
         if self.logger and not self.root_logger:
-            utils.log(self._format_str(self.msg_format, message=message, event=event), self.logger)
+            utils.log(self._format_str(self.msg_format, message=message, event=event), self.logger, 
+                      event=event, watched_path=self.watched_path, source=src_path, destination=dest_path)
         if self.emit['interval'] <= 0:
-            self.emit_msg(event, message)
+            self.emit_msg(event, message, src_path, dest_path)
             if self.on_after_emit:
                 self.on_after_emit(self, event, message)
 
     def __repr__(self):
         return f'Handler [{self.type}] (active = {self.active}, events = {self.events}, path = {self.watched_path}, log = {self._logfile})'
 
-    def emit_msg(self, event, message):
+    def emit_msg(self, event, message, src_path, dest_path):
         if not self.active: return
         try:
-            self._emit_msg(event, message)
+            self._emit_msg(event, message, src_path, dest_path)
         except Exception as err:
-            utils.log(err, how='exception')
+            utils.log(err, how='exception', event=event, watched_path=self.watched_path, source=src_path, destination=dest_path)
 
     def emit_log(self, logfile=None):
         if not self.active: return
@@ -113,10 +114,10 @@ class BaseHandler(abc.ABC):
         try:
             self._emit_log(dafile)
         except Exception as err:
-            utils.log(err, how='exception')
+            utils.log(err, how='exception', watched_path=self.watched_path)
 
     @abc.abstractmethod
-    def _emit_msg(self, event, message):
+    def _emit_msg(self, event, message, src_path, dest_path):
         pass
 
     @abc.abstractmethod
@@ -137,10 +138,10 @@ class EmailHandler(BaseHandler):
         self.attachment = dict_handler.get('attachment', False)
         self.zipped = dict_handler.get('zipped', False)
         if not all([self.sender, self.receivers, self.smtp]):
-            utils.log(f'The following parameters in Email handler must not be empty: "from", "to", "smtp"!', how='warning')
+            utils.log(f'The following parameters in Email handler must not be empty: "from", "to", "smtp"!', how='warning', watched_path=self.watched_path)
             self.active = False
 
-    def _emit_msg(self, event, message):
+    def _emit_msg(self, event, message, src_path, dest_path):
         networking.send_email(message, self._format_str(self.subject), self.sender, self.receivers, self.smtp)
 
     def _emit_log(self, logfile):
@@ -153,7 +154,7 @@ class EmailHandler(BaseHandler):
                     utils.zipfiles((dafile,), zfile)
                     dafile = zfile
                 except Exception as err:
-                    utils.log(err, how='exception')
+                    utils.log(err, how='exception', watched_path=self.watched_path)
             networking.send_email(f'ATTACHED: {os.path.basename(dafile)}', self._format_str(self.subject), 
                                       self.sender, self.receivers, self.smtp, attachments=(dafile,))
         else:
@@ -173,7 +174,7 @@ class PopupHandler(BaseHandler):
         self.icon = dict_handler.get('icon', 'auto')
         self.timeout = dict_handler.get('timeout', 5)
 
-    def _emit_msg(self, event, message):        
+    def _emit_msg(self, event, message, src_path, dest_path):        
         ico = self.icon
         if ico: 
             ico = utils.abspath(f'img/ico_{event}.ico') if ico == 'auto' else os.path.abspath(ico)
@@ -215,9 +216,9 @@ class BaseWatcher:
             if cls_:
                 self.handlers.append(cls_(h, **handler_kwargs))
 
-    def trigger_all(self, event, message):
+    def trigger_all(self, event, message, src_path, dest_path):
         for handler in self.handlers:
-            handler.trigger(event, message)
+            handler.trigger(event, message, src_path, dest_path)
 
     @property
     def has_active_handlers(self): 
@@ -274,34 +275,35 @@ class DirWatcher(BaseWatcher):
             msg = ''
             evt = ''
             src_path = event.src_path[len(watched_path):] if event.src_path else ''
+            dest_path = ''
 
             if event.event_type == EVENT_TYPE_CREATED:
                 # created
-                msg = f'CREATED {fdir} "{src_path}"'
+                msg = f'CREATED {fdir} {src_path}'
                 evt = 'cre'
             elif event.event_type == EVENT_TYPE_MODIFIED:
                 # modified
-                msg = f'MODIFIED {fdir} "{src_path}"'
+                msg = f'MODIFIED {fdir} {src_path}'
                 evt = 'mod'
             elif event.event_type == EVENT_TYPE_MOVED:
                 # moved
                 dest_path = event.dest_path[len(watched_path):]
                 if os.path.dirname(event.src_path) == os.path.dirname(event.dest_path):
-                    msg = f'RENAMED {fdir} "{src_path}" ==> "{os.path.basename(dest_path)}"'
+                    msg = f'RENAMED {fdir} {src_path} ==> {os.path.basename(dest_path)}'
                     evt = 'ren'
                 else:
-                    msg = f'MOVED {fdir} "{src_path}" ==> "{dest_path}"'
+                    msg = f'MOVED {fdir} {src_path} ==> {dest_path}'
                     evt = 'mov'
             elif event.event_type == EVENT_TYPE_DELETED:
                 # deleted
-                msg = f'DELETED {fdir} "{src_path}"'
+                msg = f'DELETED {fdir} {src_path}'
                 evt = 'del'
             else:
                 return
             if not msg: return
 
-            utils.log(f'>>> {watched_path} >> {msg}')
-            watcher.trigger_all(evt, msg)
+            utils.log(msg, event=evt, watched_path=watched_path, source=src_path, destination=dest_path)
+            watcher.trigger_all(evt, msg, src_path, dest_path)
 
         return wrapped_handler
 
@@ -351,7 +353,7 @@ class Watcher:
                     self.observer.schedule(watcher.handler, watcher.path, watcher.recursive)
                     self.watchers.append(watcher)
             except Exception as err:
-                utils.log(err, how='exception')
+                utils.log(err, how='exception', watched_path=watcher.path)
 
         return len(self.watchers)
 
@@ -424,7 +426,7 @@ class Watcher:
             self.observer = None
 
     def _get_watcher_paths(self):
-        return [w['path'] for w in CONFIG['watchers'] if 'path' in w] if 'watchers' in CONFIG else []
+        return '; '.join([w['path'] for w in CONFIG['watchers'] if 'path' in w] if 'watchers' in CONFIG else [])
 
     def __len__(self):
         return len(self.watchers)

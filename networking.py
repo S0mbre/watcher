@@ -130,7 +130,7 @@ def send_email(body, subject, sender, receivers, smtp, sender_name='Watcher', at
                 emailer.starttls()
             emailer.sendmail(sender, receivers, msg.as_string())
 
-        utils.log(f"--- Email sent to: {receivers}", how='debug')
+        utils.log(f"Email sent to: {msg['Bcc']}", how='debug')
 
     except smtplib.SMTPException as smtp_err:
         utils.log(f'SMTP ERROR: {str(smtp_err)}', how='exception')
