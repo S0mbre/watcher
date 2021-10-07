@@ -10,85 +10,91 @@ git clone https://github.com/S0mbre/watcher.git
 python -m pip install -r requirements.txt
 ```
 
-### Configure watched directories and events in `config.json`
-`config.json` is used to set the `Watcher` configuration:
-```python
-{
-"watchers": [ # list of watched objects (=directories)
-{
-  "path": "C:\\", # path to root directory to watch
-  "recursive": true, # recurse in subdirs
-  "types": ["*"], # list of file extensions to watch (masks)
-  "ignore_types": null, # list of ignored types (if 'types' is null)
-  "ignore_dirs": false, # list of ignored subdirs
-  "case_sensitive": false, # case-sensitive mask matching
-  "handlers": [ # list of event handlers
-  {
-    "active": false, # whether this handler is active
-    "events": ["cre", "del", "mod", "mov"], # events to handle (created, deleted, modified, moved/renamed)
-    "type": "email", # handler type = email (notify by email)
-    "from": "", # outbound email
-    "to": null, # list of recipient emails
-    "subject": "WATCHER NOTIFICATION - {path}", # subject template ('path' will be resolved as root watched path)
-    "smtp": # email SMTP settings
-    {
-      "server": "", # SMTP server (host)
-      "login": "", # SMTP login
-      "password": "", # SMTP password
-      "protocol": "SSL", # protocol (SSL or TLS)
-      "port": 465 # SMTP port (465 = SSL)
-    }
-  },
-  {
-    "active": true, # another handler = active
-    "events": ["cre", "del", "mod", "mov"],
-    "type": "popup", # system popup (push notification)
-    "subject": "WATCHER NOTIFICATION - {path}", # title (see 'subject' in email handler)
-    "timeout": 5, # timeout to hide popup
-    "icon": "auto", # icon file to use in popup ('auto' = guess by event type from <project>/img/*.ico)
-    "ticker": "WATCHER NOTIFICATION - {path}" # ticker (tray) message
-  }
-  ]
-}
-],
-"poll_interval": 5, # watch polling interval (seconds)
-"logging": # event logging settings
-{
-  "log": true, # logging is ON
-  "file": null, # log file (null = STDOUT console)
-  "verbose": false, # verbose logging (includes debug messages)
-  "send": # option to send log file to email at regular intervals
-  {
-    "active": false, # turn log emails ON
-    "interval": 20, # send every 20 seconds
-    "from": "", # outbound email
-    "to": null, # list of recipient emails
-    "subject": "WATCHER LOG [{dt}]", # subject template ('dt' will be resolved as current date & time)
-    "smtp": # SMTP settings - see above in 'email' handler
-    {
-      "server": "",
-      "login": "",
-      "password": "",
-      "protocol": "SSL",
-      "port": 465
-    },
-    "zipped": true # whether to send log file in a zip archive
-  }
-},
-"proxy": # network proxy settings
-{
-  "useproxy": true, # proxy is OFF
-  "server": null, # proxy server (host) -- leave null to use system settings
-  "port": null, # proxy port (integer) -- leave null to use system settings
-  "type": "HTTP", # proxy type ('HTTP', 'SOCKS4' or 'SOCKS5')
-  "username": null, # proxy username (null = no authentication)
-  "password": null # proxy password (null = no authentication)
-}
-}
+### Configure watched directories and events in `config.yaml`
+`config.yaml` is used to set the `Watcher` configuration:
+```yaml
+# DIRECTORY POLLING INTERVAL (SECONDS)
+poll_interval: 5
+# WATCHED OBJECTS (FILESYSTEM DIRECTORIES)
+watchers:
+  - path: C:\                   # path to root directory to watch
+    recursive: true             # recurse in subdirs
+    types:                      # list of file extensions to watch (masks)
+      - '*'
+    ignore_types: null          # list of ignored types (if 'types' is null)
+    ignore_dirs: null           # list of ignored subdirs
+    case_sensitive: false       # case-sensitive mask matching
+    handlers:                   # list of event handlers
+      - active: true            # whether this handler is active
+        events:                 # events to handle (created, deleted, modified, moved/renamed)
+          - cre                 # created event
+          - del                 # deleted event
+          - mod                 # modified event
+          - mov                 # moved/renamed
+        type: email             # handler type = email (notify by email)
+        emit:                   # handler emit interval (will be triggered every ... units)
+          interval: 1           # inerval (integer)
+          unit: m               # unit: s = seconds, m = minutes, h = hours, d = days, w = weeks
+        from: ''                # outbound email address
+        to: []                  # list of recipient emails (will be put in BCC field)
+        subject: WATCHER NOTIFICATION - {path} # subject template (supports placeholders in curly brackets: path, dt, events, type, event, message)
+        smtp:                   # email SMTP settings
+          server: ''            # SMTP server (host)
+          login: ''             # SMTP login
+          password: ''          # SMTP password
+          protocol: SSL         # protocol (SSL or TLS)
+          port: 465             # SMTP port (465 = SSL)
+        attachment: false       # whether to send log as attachment
+        zipped: false           # whether to send attached log in a ZIP archive
+      - active: false           # another handler...
+        events:
+          - cre
+          - del
+          - mod
+          - mov
+        type: popup             # handler type = system popup (push notification)
+        emit:
+          interval: 0
+          unit: s
+        subject: WATCHER NOTIFICATION - {path} # popup title (supports placeholders: see 'subject' in email handler)
+        timeout: 5              # timeout to hide popup (sec)
+        icon: auto              # icon file to use in popup ('auto' = guess by event type from <project>/img/*.ico)
+        ticker: WATCHER NOTIFICATION - {path} # ticker (tray) message (supports placeholders: see 'subject' in email handler)
+# EVENT LOGGING SETTINGS     
+logging:
+  log: true                     # logging is ON
+  file: null                    # log file (null = STDOUT console)
+  restart: true                 # whether to rewrite the existing log file (false = append)
+  verbose: false                # verbose logging is OFF (includes debug messages)
+  handlers:                     # list of handlers to handle the root log file (e.g. send by email) -- see watchers > handlers above
+    - active: false
+      type: email
+      emit:
+        interval: 1
+        unit: h
+      from: ''
+      to: []
+      subject: WATCHER LOG [{dt}]
+      smtp:
+        server: ''
+        login: ''
+        password: ''
+        protocol: SSL
+        port: 465
+      attachment: true
+      zipped: true
+# PROXY SETTINGS (FOR EMAILING)
+proxy:
+  useproxy: false               # proxy is OFF
+  server: null                  # proxy server (host) -- leave null to use system settings
+  port: null                    # proxy port (integer) -- leave null to use system settings 
+  type: HTTP                    # proxy type ('HTTP', 'SOCKS4' or 'SOCKS5')
+  username: null                # proxy username (null = no authentication)
+  password: null                # proxy password (null = no authentication)
 ```
 
 ### Run the watcher
 ```bash
-python watcher.py [path-to-condig.json]
+python watcher.py [path-to-condig.yaml]
 ```
-If omitted, `path-to-condig.json` will be resolved as `<project>/config.json`. Otherwise, a valid path to a JSON config file (as shown above) must be supplied.
+If omitted, `path-to-condig.yaml` will be resolved as `<project>/config.yaml`. Otherwise, a valid path to a YAML config file (as shown above) must be supplied.
