@@ -13,3 +13,4 @@ getfileinfo.py
 /dist
 /build
 *.spec
+*.bat

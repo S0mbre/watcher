@@ -21,4 +21,3 @@ with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
 DEFAULT_POLL_SECONDS = 10
 
 # ============================================================= #
-

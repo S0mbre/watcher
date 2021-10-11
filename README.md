@@ -110,3 +110,6 @@ proxy:
 python watcher.py [path-to-condig.yaml]
 ```
 If omitted, `path-to-condig.yaml` will be resolved as `<project>/config.yaml`. Otherwise, a valid path to a YAML config file (as shown above) must be supplied.
+
+## Credits
+Icons made by [Freepik](https://www.freepik.com) from [Flaticon](https://www.flaticon.com/).
